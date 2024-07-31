@@ -6,11 +6,23 @@ import (
 	"unsafe"
 )
 
-func (ring *Ring) Enter(submitted uint32, waitNr uint32, flags uint32, sig unsafe.Pointer) (uint, error) {
-	return ring.Enter2(submitted, waitNr, flags, sig, nSig/szDivider)
+const (
+	nSig                    = 65
+	szDivider               = 8
+	registerRingFdOffset    = uint32(4294967295)
+	regIOWQMaxWorkersNrArgs = 2
+
+	sysSetup    = 425
+	sysEnter    = 426
+	sysRegister = 427
+)
+
+func IoUringEnter(fd uint32, submitted uint32, waitNr uint32, flags uint32, sig unsafe.Pointer) (uint, error) {
+	return SyscallIoUringEnter2(fd, submitted, waitNr, flags, sig, nSig/szDivider)
 }
 
-func (ring *Ring) Enter2(
+func SyscallIoUringEnter2(
+	fd uint32,
 	submitted uint32,
 	waitNr uint32,
 	flags uint32,
@@ -24,7 +36,7 @@ func (ring *Ring) Enter2(
 
 	consumed, _, errno = syscall.Syscall6(
 		sysEnter,
-		uintptr(ring.enterRingFd),
+		uintptr(fd),
 		uintptr(submitted),
 		uintptr(waitNr),
 		uintptr(flags),
@@ -39,15 +51,14 @@ func (ring *Ring) Enter2(
 	return uint(consumed), nil
 }
 
-// liburing: io_uring_setup - https://manpages.debian.org/unstable/liburing-dev/io_uring_setup.2.en.html
-func Setup(entries uint32, p *Params) (uint, error) {
+func SyscallIoUringSetup(entries uint32, p *Params) (uint, error) {
 	fd, _, errno := syscall.Syscall(sysSetup, uintptr(entries), uintptr(unsafe.Pointer(p)), 0)
 	runtime.KeepAlive(p)
 
 	return uint(fd), errno
 }
 
-func syscallRegister(fd int, opcode uint32, arg unsafe.Pointer, nrArgs uint32) (uint, syscall.Errno) {
+func SyscallIoUringRegister(fd int, opcode uint32, arg unsafe.Pointer, nrArgs uint32) (uint, syscall.Errno) {
 	returnFirst, _, errno := syscall.Syscall6(
 		sysRegister,
 		uintptr(fd),
@@ -59,9 +70,4 @@ func syscallRegister(fd int, opcode uint32, arg unsafe.Pointer, nrArgs uint32) (
 	)
 
 	return uint(returnFirst), errno
-}
-
-// liburing: io_uring_register - https://manpages.debian.org/unstable/liburing-dev/io_uring_register.2.en.html
-func (ring *Ring) Register(fd int, opcode uint32, arg unsafe.Pointer, nrArgs uint32) (uint, syscall.Errno) {
-	return syscallRegister(fd, opcode, arg, nrArgs)
 }
