@@ -6,17 +6,6 @@ import (
 	"unsafe"
 )
 
-const (
-	nSig                    = 65
-	szDivider               = 8
-	registerRingFdOffset    = uint32(4294967295)
-	regIOWQMaxWorkersNrArgs = 2
-
-	sysSetup    = 425
-	sysEnter    = 426
-	sysRegister = 427
-)
-
 func IoUringEnter(fd uint32, submitted uint32, waitNr uint32, flags uint32, sig unsafe.Pointer) (uint, error) {
 	return SyscallIoUringEnter2(fd, submitted, waitNr, flags, sig, nSig/szDivider)
 }

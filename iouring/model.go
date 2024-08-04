@@ -32,7 +32,7 @@ type CQRingOffsets struct {
 type Params struct {
 	sqEntries    uint32
 	cqEntries    uint32
-	flags        uint32
+	Flags        uint32
 	sqThreadCPU  uint32
 	sqThreadIdle uint32
 	features     uint32
@@ -111,7 +111,7 @@ type Ring struct {
 	ringFd      int
 	features    uint32
 	enterRingFd int
-	intFlags    uint8
+	intFlags    uint32
 	pad         [3]uint8
 	pad2        uint32
 }
