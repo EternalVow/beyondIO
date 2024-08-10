@@ -20,7 +20,7 @@ type Iouring struct {
 }
 
 func (i Iouring) QueueInitParams(entries uint, ioUring *Ring, p *Params) error {
-	ret := ioUringQueueInitParams(entries, ioUring, p, nil, 0)
+	ret := QueueInitParams(entries, ioUring, p, nil, 0)
 	if ret != 0 {
 		return errors.New("Failed to initialize Iouring queue")
 	}
@@ -31,16 +31,16 @@ func (i Iouring) QueueInitTryNosqarr(entries uint, ioUring *Ring, p *Params, buf
 	var flags = p.Flags
 
 	p.Flags |= SetupNoSQArray
-	ret := ioUringQueueInitParams(entries, ioUring, p, buf, bufSize)
+	ret := QueueInitParams(entries, ioUring, p, buf, bufSize)
 
 	/* don't fallback if explicitly asked for NOSQARRAY */
 	if ret != _EINVAL || (flags&SetupNoSQArray) == 0 {
 		//return ret, nil
-		return errors.New("ioUringQueueInitParams Failed to initialize Iouring queue")
+		return errors.New("QueueInitParams Failed to initialize Iouring queue")
 	}
 
 	p.Flags = flags
-	ret = ioUringQueueInitParams(entries, ioUring, p, buf, bufSize)
+	ret = QueueInitParams(entries, ioUring, p, buf, bufSize)
 	if ret != 0 {
 		return errors.New("Failed to initialize Iouring queue")
 	}

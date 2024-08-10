@@ -2,18 +2,23 @@ package iouring
 
 import "unsafe"
 
-func sysMmap(addr, length uintptr, prot, flags, fd int, offset int64) (unsafe.Pointer, error) {
-	ptr, err := mmap(addr, length, prot, flags, fd, offset)
-
-	return unsafe.Pointer(ptr), err
+func clz(x uint32) uint32 {
+	if x == 0 {
+		return 32
+	}
+	n := 0
+	for ; x > 0; n++ {
+		x >>= 1
+	}
+	return uint32(32 - n)
+}
+func fls(x uint) uint {
+	if x == 0 {
+		return 0
+	}
+	return 8*uint(unsafe.Sizeof(x)) - uint(clz(uint32(x)))
 }
 
-func sysMunmap(addr, length uintptr) error {
-	return munmap(addr, length)
+func roundupPow2(depth uint) uint {
+	return 1 << fls(depth-1)
 }
-
-//go:linkname mmap syscall.mmap
-func mmap(addr uintptr, length uintptr, prot int, flags int, fd int, offset int64) (xaddr uintptr, err error)
-
-//go:linkname munmap syscall.munmap
-func munmap(addr uintptr, length uintptr) (err error)
