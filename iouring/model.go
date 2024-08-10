@@ -111,6 +111,8 @@ type SubmissionQueueEntry struct {
 	SpliceOffIn int32
 	SpliceFlags int32
 	RwFlags     uint8
+	BufIndex    uint64
+	MsgFlags    uint8
 }
 
 // liburing: io_uring_cqe

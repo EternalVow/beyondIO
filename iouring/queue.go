@@ -68,8 +68,8 @@ func PrepTree(sqe *SubmissionQueueEntry, fd_in int, fd_out int, nbytes uint32, s
 	return nil
 }
 
-func PrepReadv(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint, offset uint64) error {
-	err := PrepRw(int(OpReadv), sqe, fd, unsafe.Pointer(iovec), uint32(nr_vecs), 0)
+func PrepReadv(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
+	err := PrepRw(int(OpReadv), sqe, fd, unsafe.Pointer(iovec), nr_vecs, 0)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func PrepReadv(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs 
 	return nil
 }
 
-func PrepReadv2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint, offset uint64, flags int) error {
+func PrepReadv2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64, flags int) error {
 	err := PrepReadv(sqe, fd, iovec, nr_vecs, offset)
 	if err != nil {
 		return err
@@ -87,62 +87,71 @@ func PrepReadv2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs
 	return nil
 }
 
-//
-//
-//IOURINGINLINE void io_uring_prep_read_fixed(struct io_uring_sqe *sqe, int fd,
-//void *buf, unsigned nbytes,
-//__u64 offset, int buf_index)
-//{
-//io_uring_prep_rw(IORING_OP_READ_FIXED, sqe, fd, buf, nbytes, offset);
-//sqe->buf_index = (__u16) buf_index;
-//}
-//
-//IOURINGINLINE void io_uring_prep_writev(struct io_uring_sqe *sqe, int fd,
-//const struct iovec *iovecs,
-//unsigned nr_vecs, __u64 offset)
-//{
-//io_uring_prep_rw(IORING_OP_WRITEV, sqe, fd, iovecs, nr_vecs, offset);
-//}
-//
-//IOURINGINLINE void io_uring_prep_writev2(struct io_uring_sqe *sqe, int fd,
-//const struct iovec *iovecs,
-//unsigned nr_vecs, __u64 offset,
-//int flags)
-//{
-//io_uring_prep_writev(sqe, fd, iovecs, nr_vecs, offset);
-//sqe->rw_flags = flags;
-//}
-//
-//IOURINGINLINE void io_uring_prep_write_fixed(struct io_uring_sqe *sqe, int fd,
-//const void *buf, unsigned nbytes,
-//__u64 offset, int buf_index)
-//{
-//io_uring_prep_rw(IORING_OP_WRITE_FIXED, sqe, fd, buf, nbytes, offset);
-//sqe->buf_index = (__u16) buf_index;
-//}
-//
-//IOURINGINLINE void io_uring_prep_recvmsg(struct io_uring_sqe *sqe, int fd,
-//struct msghdr *msg, unsigned flags)
-//{
-//io_uring_prep_rw(IORING_OP_RECVMSG, sqe, fd, msg, 1, 0);
-//sqe->msg_flags = flags;
-//}
-//
-//IOURINGINLINE void io_uring_prep_recvmsg_multishot(struct io_uring_sqe *sqe,
-//int fd, struct msghdr *msg,
-//unsigned flags)
-//{
-//io_uring_prep_recvmsg(sqe, fd, msg, flags);
-//sqe->ioprio |= IORING_RECV_MULTISHOT;
-//}
-//
-//IOURINGINLINE void io_uring_prep_sendmsg(struct io_uring_sqe *sqe, int fd,
-//const struct msghdr *msg,
-//unsigned flags)
-//{
-//io_uring_prep_rw(IORING_OP_SENDMSG, sqe, fd, msg, 1, 0);
-//sqe->msg_flags = flags;
-//}
+func PrepReadFixed(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes uint32, offset uint64, buf_index int) error {
+	err := PrepRw(int(OpReadFixed), sqe, fd, buf, nbytes, offset)
+	if err != nil {
+		return err
+	}
+	sqe.BufIndex = uint64(buf_index)
+
+	return nil
+}
+
+func PrepReadWritev(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
+	err := PrepRw(int(OpWritev), sqe, fd, unsafe.Pointer(iovec), nr_vecs, offset)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func PrepReadWritev2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64, flags int) error {
+	err := PrepReadWritev(sqe, fd, iovec, nr_vecs, offset)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func PrepWriteFixed(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes uint32, offset uint64, buf_index int) error {
+	err := PrepRw(int(OpWriteFixed), sqe, fd, buf, nbytes, offset)
+	if err != nil {
+		return err
+	}
+	sqe.BufIndex = uint64(buf_index)
+
+	return nil
+}
+
+func PrepRecvmsg(sqe *SubmissionQueueEntry, fd int, msgh *syscall.Msghdr, flags int) error {
+	err := PrepRw(int(OpRecvmsg), sqe, fd, unsafe.Pointer(msgh), 1, 0)
+	if err != nil {
+		return err
+	}
+	sqe.MsgFlags = uint8(flags)
+
+	return nil
+}
+
+func PrepRecvmsgMultishot(sqe *SubmissionQueueEntry, fd int, msgh *syscall.Msghdr, flags int) error {
+	err := PrepRecvmsg(sqe, fd, msgh, flags)
+	if err != nil {
+		return err
+	}
+	sqe.IoPrio |= RecvMultishot
+
+	return nil
+}
+
+func PrepSendmsg(sqe *SubmissionQueueEntry, fd int, msgh *syscall.Msghdr, flags int) error {
+	err := PrepRw(int(OpSendmsg), sqe, fd, unsafe.Pointer(msgh), 1, 0)
+	if err != nil {
+		return err
+	}
+	sqe.MsgFlags = uint8(flags)
+
+	return nil
+}
 
 func CqeGetData(cqe *CompletionQueueEvent) (uint64, error) {
 	if cqe == nil {
