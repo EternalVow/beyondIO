@@ -104,6 +104,8 @@ type SubmissionQueueEntry struct {
 	// 	};
 	// };
 	SpliceFdIn int32
+	Addr2      uint64
+	AddrLen    uint64
 	Addr3      uint64
 	_pad2      [1]uint64
 	// TODO: add __u8	cmd[0];
@@ -112,7 +114,11 @@ type SubmissionQueueEntry struct {
 	SpliceFlags int32
 	RwFlags     uint8
 	BufIndex    uint64
+	BufGroup    uint64
 	MsgFlags    uint8
+	AcceptFlags uint8
+	CancelFlags uint32
+	FileIndex   uint32
 }
 
 // liburing: io_uring_cqe

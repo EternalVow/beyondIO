@@ -107,6 +107,17 @@ const (
 	OpSendZC
 	OpSendMsgZC
 
+	OpReadMultishot
+	OpWaitid
+	OpFutexWait
+	OpFutexWake
+	OpFutexWaitv
+	OpFixedFdInstall
+	OpFtruncate
+	OpBind
+	OpListen
+
+	/* this goes last, obviously */
 	OpLast
 )
 
@@ -147,6 +158,7 @@ const (
 	RecvMultishot
 	RecvsendFixedBuf
 	SendZCReportUsage
+	RecvsendBundle
 )
 
 const NotifUsageZCCopied uint32 = 1 << 31
