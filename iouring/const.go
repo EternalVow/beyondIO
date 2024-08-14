@@ -16,9 +16,31 @@ const (
 	KERN_MAX_CQ_ENTRIES      = (2 * KERN_MAX_ENTRIES)
 	KRING_SIZE               = 64
 	hugePageSize        uint = 2 * 1024 * 1024
+
+	LiburingUdataTimeout = -1
 )
 
 const FileIndexAlloc uint32 = 4294967295
+
+/*
+ * sq_ring->flags
+ */
+const (
+	SQNeedWakeup uint32 = 1 << iota /* needs io_uring_enter wakeup */
+	SQCQOverflow                    /* CQ ring is overflown */
+	SQTaskrun                       /* task should enter the kernel */
+)
+
+/*
+ * io_uring_enter(2) flags
+ */
+const (
+	EnterGetevents uint32 = 1 << iota
+	EnterSQWakeup
+	EnterSQWait
+	EnterExtArg
+	EnterRegisteredRing
+)
 
 const (
 	SqeFixedFile uint8 = 1 << iota

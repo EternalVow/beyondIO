@@ -133,14 +133,14 @@ type CompletionQueueEvent struct {
 
 // liburing: io_uring_sq
 type SubmissionQueue struct {
-	head        *uint32
-	tail        *uint32
+	head        *int32
+	tail        *int32
 	ringMask    *uint32
 	ringEntries *uint32
-	flags       *uint32
+	flags       *int32
 	dropped     *uint32
 	array       *uint32
-	sqes        *SubmissionQueueEntry
+	sqes        []*SubmissionQueueEntry
 
 	ringSize uint
 	ringPtr  unsafe.Pointer
@@ -154,13 +154,13 @@ type SubmissionQueue struct {
 
 // liburing: io_uring_cq
 type CompletionQueue struct {
-	head        *uint32
-	tail        *uint32
+	head        *int32
+	tail        *int32
 	ringMask    *uint32
 	ringEntries *uint32
 	flags       *uint32
 	overflow    *uint32
-	cqes        *CompletionQueueEvent
+	cqes        []*CompletionQueueEvent
 
 	ringSize uint
 	ringPtr  unsafe.Pointer
@@ -179,4 +179,20 @@ type Ring struct {
 	intFlags    uint32
 	pad         [3]uint8
 	pad2        uint32
+}
+
+type GetData struct {
+	Submit   uint64
+	WaitNr   uint64
+	GetFlags uint64
+	Sz       int
+	HasTs    int
+	Arg      unsafe.Pointer
+}
+
+type GeteventsArg struct {
+	sigmask    uint64
+	sigmask_sz uint32
+	pad        uint32
+	ts         uint64
 }

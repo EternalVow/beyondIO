@@ -2,6 +2,9 @@ package iouring
 
 import (
 	"errors"
+	"fmt"
+	"golang.org/x/sys/unix"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 )
@@ -29,9 +32,16 @@ func SqeSetData(sqe *SubmissionQueueEntry, data uint64) error {
 	return nil
 }
 
-func InitializeSqe() *SubmissionQueueEntry {
-	sqe := &SubmissionQueueEntry{}
-	return sqe
+func InitializeSqe(sqe *SubmissionQueueEntry) {
+	sqe.Flags = 0
+	sqe.IoPrio = 0
+	sqe.RwFlags = 0
+	sqe.BufIndex = 0
+	sqe.Personality = 0
+	sqe.FileIndex = 0
+	sqe.Addr3 = 0
+	sqe._pad2[0] = 0
+
 }
 
 func SqeSetFlags(sqe *SubmissionQueueEntry, flags uint8) error {
@@ -407,265 +417,275 @@ func PrepRecvMultishot(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer
 	return nil
 }
 
-// struct epoll_event;
-// IOURINGINLINE void io_uring_prep_epoll_ctl(struct io_uring_sqe *sqe, int epfd,
-// int fd, int op,
-// struct epoll_event *ev)
-// {
-// io_uring_prep_rw(IORING_OP_EPOLL_CTL, sqe, epfd, ev,
-// (__u32) op, (__u32) fd);
-// }
+func PrepEpollCtl(sqe *SubmissionQueueEntry, epfd int, fd int, op int, ev *syscall.EpollEvent) error {
+	err := PrepRw(int(OpEpollCtl), sqe, epfd, unsafe.Pointer(ev), uint32(op), uint64(fd))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func PrepProvideBuffers(sqe *SubmissionQueueEntry, addr *syscall.Sockaddr, len int, nr int, bgid int, bid int) error {
+	err := PrepRw(int(OpProvideBuffers), sqe, nr, unsafe.Pointer(addr), uint32(len), uint64(bid))
+	if err != nil {
+		return err
+	}
+	sqe.BufGroup = uint64(bgid)
+	return nil
+}
+
+func PrepRemoveBuffers(sqe *SubmissionQueueEntry, nr int, bgid int) error {
+	err := PrepRw(int(OpRemoveBuffers), sqe, nr, nil, 0, 0)
+	if err != nil {
+		return err
+	}
+	sqe.BufGroup = uint64(bgid)
+	return nil
+}
+
+func PrepShutdown(sqe *SubmissionQueueEntry, fd int, how int) error {
+	err := PrepRw(int(OpShutdown), sqe, fd, nil, uint32(how), 0)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func PrepSocket(sqe *SubmissionQueueEntry, domain int, stype int, protocol int, flag uint) error {
+	err := PrepRw(int(OpSocket), sqe, domain, nil, uint32(protocol), uint64(stype))
+	if err != nil {
+		return err
+	}
+	sqe.RwFlags = uint8(flag)
+	return nil
+}
+
+func PrepSocketDirect(sqe *SubmissionQueueEntry, domain int, stype int, protocol int, file_index uint32, flag uint) error {
+	err := PrepRw(int(OpSocket), sqe, domain, nil, uint32(protocol), uint64(stype))
+	if err != nil {
+		return err
+	}
+	sqe.RwFlags = uint8(flag)
+	/* offset by 1 for allocation */
+	if file_index == FileIndexAlloc {
+		file_index--
+		SetTarGetFixedFile(sqe, file_index)
+	}
+	return nil
+}
+
+func PrepSocketDirectAlloc(sqe *SubmissionQueueEntry, domain int, stype int, protocol int, flag uint) error {
+	err := PrepRw(int(OpSocket), sqe, domain, nil, uint32(protocol), uint64(stype))
+	if err != nil {
+		return err
+	}
+	sqe.RwFlags = uint8(flag)
+	/* offset by 1 for allocation */
+	SetTarGetFixedFile(sqe, FileIndexAlloc-1)
+
+	return nil
+}
+
+func PrepCqReady(ioUring *Ring) int32 {
+
+	return atomic.LoadInt32(ioUring.cqRing.tail) - *ioUring.cqRing.head
+}
+
+//func WaitCqeNr(ioUring *Ring, cqe_ptr **CompletionQueueEvent, wait_nr uint) bool {
 //
-// IOURINGINLINE void io_uring_prep_provide_buffers(struct io_uring_sqe *sqe,
-// void *addr, int len, int nr,
-// int bgid, int bid)
-// {
-// io_uring_prep_rw(IORING_OP_PROVIDE_BUFFERS, sqe, nr, addr, (__u32) len,
-// (__u64) bid);
-// sqe->buf_group = (__u16) bgid;
-// }
-//
-// IOURINGINLINE void io_uring_prep_remove_buffers(struct io_uring_sqe *sqe,
-// int nr, int bgid)
-// {
-// io_uring_prep_rw(IORING_OP_REMOVE_BUFFERS, sqe, nr, NULL, 0, 0);
-// sqe->buf_group = (__u16) bgid;
-// }
-//
-// IOURINGINLINE void io_uring_prep_shutdown(struct io_uring_sqe *sqe, int fd,
-// int how)
-// {
-// io_uring_prep_rw(IORING_OP_SHUTDOWN, sqe, fd, NULL, (__u32) how, 0);
-// }
-//
-// IOURINGINLINE void io_uring_prep_unlinkat(struct io_uring_sqe *sqe, int dfd,
-// const char *path, int flags)
-// {
-// io_uring_prep_rw(IORING_OP_UNLINKAT, sqe, dfd, path, 0, 0);
-// sqe->unlink_flags = (__u32) flags;
-// }
-//
-// IOURINGINLINE void io_uring_prep_unlink(struct io_uring_sqe *sqe,
-// const char *path, int flags)
-// {
-// io_uring_prep_unlinkat(sqe, AT_FDCWD, path, flags);
-// }
-// struct epoll_event;
-// IOURINGINLINE void io_uring_prep_epoll_ctl(struct io_uring_sqe *sqe, int epfd,
-// int fd, int op,
-// struct epoll_event *ev)
-// {
-// io_uring_prep_rw(IORING_OP_EPOLL_CTL, sqe, epfd, ev,
-// (__u32) op, (__u32) fd);
-// }
-//
-// IOURINGINLINE void io_uring_prep_provide_buffers(struct io_uring_sqe *sqe,
-// void *addr, int len, int nr,
-// int bgid, int bid)
-// {
-// io_uring_prep_rw(IORING_OP_PROVIDE_BUFFERS, sqe, nr, addr, (__u32) len,
-// (__u64) bid);
-// sqe->buf_group = (__u16) bgid;
-// }
-//
-// IOURINGINLINE void io_uring_prep_remove_buffers(struct io_uring_sqe *sqe,
-// int nr, int bgid)
-// {
-// io_uring_prep_rw(IORING_OP_REMOVE_BUFFERS, sqe, nr, NULL, 0, 0);
-// sqe->buf_group = (__u16) bgid;
-// }
-//
-// IOURINGINLINE void io_uring_prep_shutdown(struct io_uring_sqe *sqe, int fd,
-// int how)
-// {
-// io_uring_prep_rw(IORING_OP_SHUTDOWN, sqe, fd, NULL, (__u32) how, 0);
-// }
-//
-// IOURINGINLINE void io_uring_prep_unlinkat(struct io_uring_sqe *sqe, int dfd,
-// const char *path, int flags)
-// {
-// io_uring_prep_rw(IORING_OP_UNLINKAT, sqe, dfd, path, 0, 0);
-// sqe->unlink_flags = (__u32) flags;
-// }
-//
-// IOURINGINLINE void io_uring_prep_unlink(struct io_uring_sqe *sqe,
-// const char *path, int flags)
-// {
-// io_uring_prep_unlinkat(sqe, AT_FDCWD, path, flags);
-// }
-//
-// IOURINGINLINE void io_uring_prep_socket(struct io_uring_sqe *sqe, int domain,
-// int type, int protocol,
-// unsigned int flags)
-// {
-// io_uring_prep_rw(IORING_OP_SOCKET, sqe, domain, NULL, protocol, type);
-// sqe->rw_flags = flags;
-// }
-//
-// IOURINGINLINE void io_uring_prep_socket_direct(struct io_uring_sqe *sqe,
-// int domain, int type,
-// int protocol,
-// unsigned file_index,
-// unsigned int flags)
-// {
-// io_uring_prep_rw(IORING_OP_SOCKET, sqe, domain, NULL, protocol, type);
-// sqe->rw_flags = flags;
-// /* offset by 1 for allocation */
-// if (file_index == IORING_FILE_INDEX_ALLOC)
-// file_index--;
-// __io_uring_set_target_fixed_file(sqe, file_index);
-// }
-//
-// IOURINGINLINE void io_uring_prep_socket_direct_alloc(struct io_uring_sqe *sqe,
-// int domain, int type,
-// int protocol,
-// unsigned int flags)
-// {
-// io_uring_prep_rw(IORING_OP_SOCKET, sqe, domain, NULL, protocol, type);
-// sqe->rw_flags = flags;
-// __io_uring_set_target_fixed_file(sqe, IORING_FILE_INDEX_ALLOC - 1);
-// }
-//
-// /*
-// * Returns how many unconsumed entries are ready in the CQ ring
-// */
-// IOURINGINLINE unsigned io_uring_cq_ready(const struct io_uring *ring)
-// {
-// return io_uring_smp_load_acquire(ring->cq.ktail) - *ring->cq.khead;
-// }
-//
-// /*
-// * Returns true if there are overflow entries waiting to be flushed onto
-// * the CQ ring
-// */
-// IOURINGINLINE bool io_uring_cq_has_overflow(const struct io_uring *ring)
-// {
-// return IO_URING_READ_ONCE(*ring->sq.kflags) & IORING_SQ_CQ_OVERFLOW;
-// }
-//
-// /*
-// * Returns true if the eventfd notification is currently enabled
-// */
-// IOURINGINLINE bool io_uring_cq_eventfd_enabled(const struct io_uring *ring)
-// {
-// if (!ring->cq.kflags)
-// return true;
-//
-// return !(*ring->cq.kflags & IORING_CQ_EVENTFD_DISABLED);
-// }
-//
-// /*
-// * Toggle eventfd notification on or off, if an eventfd is registered with
-// * the ring.
-// */
-// IOURINGINLINE int io_uring_cq_eventfd_toggle(struct io_uring *ring,
-// bool enabled)
-// {
-// uint32_t flags;
-//
-// if (!!enabled == io_uring_cq_eventfd_enabled(ring))
-// return 0;
-//
-// if (!ring->cq.kflags)
-// return -EOPNOTSUPP;
-//
-// flags = *ring->cq.kflags;
-//
-// if (enabled)
-// flags &= ~IORING_CQ_EVENTFD_DISABLED;
-// else
-// flags |= IORING_CQ_EVENTFD_DISABLED;
-//
-// IO_URING_WRITE_ONCE(*ring->cq.kflags, flags);
-//
-// return 0;
-// }
-//
+//}
+
+// __io_uring_peek_cqe
+func peekCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, nr_available *uint32) error {
+	var (
+		cqe       *CompletionQueueEvent
+		err       error
+		available uint32
+		mask      = *ioUring.cqRing.ringMask
+		shift     int
+	)
+	if ioUring.flags&SetupCQE32 != 0 {
+		shift = 1
+	}
+	for {
+		tail := atomic.LoadInt32(ioUring.cqRing.tail)
+		head := *ioUring.cqRing.head
+
+		cqe = nil
+		available = uint32(tail - head)
+		if available == 0 {
+			break
+		}
+		cqe = ioUring.cqRing.cqes[(uint32(head)&mask)<<shift]
+		if ioUring.features&FeatExtArg == 0 && cqe.UserData == LiburingUdataTimeout {
+			if cqe.Res < 0 {
+				err = fmt.Errorf("cqe.Res err = %v", err)
+			}
+			CqAdvance(ioUring, 1)
+			if err == nil {
+				continue
+			}
+			cqe = nil
+
+		}
+
+		break
+	}
+	*cqe_ptr = cqe
+	if nr_available != nil {
+		*nr_available = available
+	}
+	return err
+}
+
+// io_uring_cq_advance
+func CqAdvance(ioUring *Ring, nr uint32) {
+	if nr != 0 {
+		cq := ioUring.cqRing
+
+		/*
+		 * Ensure that the kernel only sees the new value of the head
+		 * index after the CQEs have been read.
+		 */
+		atomic.StoreInt32(cq.head, *cq.head+int32(nr))
+	}
+}
+
+func CqRingNeedsFlush(ioUring *Ring) bool {
+	return (uint32(atomic.LoadInt32(ioUring.sqRing.flags)) & (SQCQOverflow | SQTaskrun)) != 0
+}
+
+// cq_ring_needs_enter
+func CqRingNeedsEnter(ioUring *Ring) bool {
+	return (ioUring.flags&SetupIOPoll) != 0 || CqRingNeedsFlush(ioUring)
+}
+
+// _io_uring_get_cqe
+func getCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, data *GetData) error {
+	var (
+		cqe    *CompletionQueueEvent
+		looped bool
+		err    error
+	)
+
+	for {
+		var (
+			needEnter   bool
+			flags       uint32
+			nrAvailable uint32
+			errRet      error
+		)
+		errRet = peekCqe(ioUring, &cqe, &nrAvailable)
+		if errRet != nil {
+			err = errRet
+			break
+		}
+
+		if cqe == nil && data.WaitNr == 0 && data.Submit == 0 {
+			/*
+			 * If we already looped once, we already entered
+			 * the kernel. Since there's nothing to submit or
+			 * wait for, don't keep retrying.
+			 */
+			if looped || (!CqRingNeedsEnter(ioUring)) {
+				if err == nil {
+					err = fmt.Errorf("-EAGAIN")
+				}
+				break
+			}
+			needEnter = true
+		}
+		if data.WaitNr > uint64(nrAvailable) || needEnter {
+			flags = EnterGetevents | uint32(data.GetFlags)
+			needEnter = true
+		}
+		if !needEnter {
+			break
+		}
+
+		if looped && data.HasTs != 0 {
+			arg := (*GeteventsArg)(data.Arg)
+			if cqe == nil && arg.ts != 0 && err == nil {
+				err = fmt.Errorf("-EAGAIN")
+				break
+			}
+		}
+
+		if (ioUring.intFlags & IntFlagRegRing) != 0 {
+			flags |= EnterRegisteredRing
+		}
+		consumed, errno := SyscallIoUringEnter2(uint32(ioUring.enterRingFd), uint32(data.Submit), uint32(data.WaitNr), flags, data.Arg, data.Sz)
+		if errno != nil {
+			if err == nil {
+				err = errno
+			}
+			break
+		}
+
+		data.Submit -= uint64(consumed)
+		if cqe != nil {
+			break
+		}
+		if !looped {
+			looped = true
+			err = errRet
+		}
+	}
+	*cqe_ptr = cqe
+	return err
+}
+
+// __io_uring_get_cqe
+func GetCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, submit uint64, wait_nr uint64, sigmask *unix.Sigset_t) error {
+	data := GetData{
+		Submit:   submit,
+		WaitNr:   wait_nr,
+		GetFlags: 0,
+		Sz:       nSig / szDivider,
+		Arg:      unsafe.Pointer(sigmask),
+	}
+	return getCqe(ioUring, cqe_ptr, &data)
+}
+
 // /*
 // * Return an IO completion, waiting for 'wait_nr' completions if one isn't
 // * readily available. Returns 0 with cqe_ptr filled in on success, -errno on
 // * failure.
 // */
-// IOURINGINLINE int io_uring_wait_cqe_nr(struct io_uring *ring,
-// struct io_uring_cqe **cqe_ptr,
-// unsigned wait_nr)
-// {
-// return __io_uring_get_cqe(ring, cqe_ptr, 0, wait_nr, NULL);
-// }
-//
-// /*
-// * Internal helper, don't use directly in applications. Use one of the
-// * "official" versions of this, io_uring_peek_cqe(), io_uring_wait_cqe(),
-// * or io_uring_wait_cqes*().
-// */
-// IOURINGINLINE int __io_uring_peek_cqe(struct io_uring *ring,
-// struct io_uring_cqe **cqe_ptr,
-// unsigned *nr_available)
-// {
-// struct io_uring_cqe *cqe;
-// int err = 0;
-// unsigned available;
-// unsigned mask = ring->cq.ring_mask;
-// int shift = 0;
-//
-// if (ring->flags & IORING_SETUP_CQE32)
-// shift = 1;
-//
-// do {
-// unsigned tail = io_uring_smp_load_acquire(ring->cq.ktail);
-// unsigned head = *ring->cq.khead;
-//
-// cqe = NULL;
-// available = tail - head;
-// if (!available)
-// break;
-//
-// cqe = &ring->cq.cqes[(head & mask) << shift];
-// if (!(ring->features & IORING_FEAT_EXT_ARG) &&
-// cqe->user_data == LIBURING_UDATA_TIMEOUT) {
-// if (cqe->res < 0)
-// err = cqe->res;
-// io_uring_cq_advance(ring, 1);
-// if (!err)
-// continue;
-// cqe = NULL;
-// }
-//
-// break;
-// } while (1);
-//
-// *cqe_ptr = cqe;
-// if (nr_available)
-// *nr_available = available;
-// return err;
-// }
-//
+func WaitCqeNr(ioUring *Ring, cqe_ptr **CompletionQueueEvent, wait_nr uint64) error {
+
+	return GetCqe(ioUring, cqe_ptr, 0, wait_nr, nil)
+}
+
 // /*
 // * Return an IO completion, if one is readily available. Returns 0 with
 // * cqe_ptr filled in on success, -errno on failure.
 // */
-// IOURINGINLINE int io_uring_peek_cqe(struct io_uring *ring,
-// struct io_uring_cqe **cqe_ptr)
-// {
-// if (!__io_uring_peek_cqe(ring, cqe_ptr, NULL) && *cqe_ptr)
-// return 0;
-//
-// return io_uring_wait_cqe_nr(ring, cqe_ptr, 0);
-// }
-//
+func PeekCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent) error {
+
+	if err := peekCqe(ioUring, cqe_ptr, nil); err == nil {
+		if *cqe_ptr != nil {
+			return nil
+		}
+	}
+	return WaitCqeNr(ioUring, cqe_ptr, 0)
+}
+
 // /*
 // * Return an IO completion, waiting for it if necessary. Returns 0 with
 // * cqe_ptr filled in on success, -errno on failure.
 // */
-// IOURINGINLINE int io_uring_wait_cqe(struct io_uring *ring,
-// struct io_uring_cqe **cqe_ptr)
-// {
-// if (!__io_uring_peek_cqe(ring, cqe_ptr, NULL) && *cqe_ptr)
-// return 0;
-//
-// return io_uring_wait_cqe_nr(ring, cqe_ptr, 1);
-// }
-//
+func WaitCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent) error {
+
+	if err := peekCqe(ioUring, cqe_ptr, nil); err == nil {
+		if *cqe_ptr != nil {
+			return nil
+		}
+	}
+	return WaitCqeNr(ioUring, cqe_ptr, 1)
+}
+
 // /*
 // * Return an sqe to fill. Application must later call io_uring_submit()
 // * when it's ready to tell the kernel about it. The caller may call this
@@ -673,30 +693,36 @@ func PrepRecvMultishot(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer
 // *
 // * Returns a vacant sqe, or NULL if we're full.
 // */
-// IOURINGINLINE struct io_uring_sqe *_io_uring_get_sqe(struct io_uring *ring)
-// {
-// struct io_uring_sq *sq = &ring->sq;
-// unsigned int head, next = sq->sqe_tail + 1;
-// int shift = 0;
-//
-// if (ring->flags & IORING_SETUP_SQE128)
-// shift = 1;
-// if (!(ring->flags & IORING_SETUP_SQPOLL))
-// head = *sq->khead;
-// else
-// head = io_uring_smp_load_acquire(sq->khead);
-//
-// if (next - head <= sq->ring_entries) {
-// struct io_uring_sqe *sqe;
-//
-// sqe = &sq->sqes[(sq->sqe_tail & sq->ring_mask) << shift];
-// sq->sqe_tail = next;
-// io_uring_initialize_sqe(sqe);
-// return sqe;
-// }
-//
-// return NULL;
-// }
+// _io_uring_get_sqe
+func GetSqe(ioUring *Ring) *SubmissionQueueEntry {
+	sq := ioUring.sqRing
+
+	head := sq.sqeTail + 1
+	next := head
+	var shift int
+
+	if (ioUring.flags & SetupSQE128) != 0 {
+		shift = 1
+	}
+	if (ioUring.flags & SetupSQPoll) == 0 {
+		head = uint32(*sq.head)
+	} else {
+		head = uint32(atomic.LoadInt32(sq.head))
+
+	}
+
+	if next-head <= *sq.ringEntries {
+		//struct io_uring_sqe *sqe;
+
+		sqe := sq.sqes[(sq.sqeTail&*sq.ringMask)<<shift]
+		sq.sqeTail = next
+		InitializeSqe(sqe)
+		return sqe
+	}
+
+	return nil
+}
+
 func CqeGetData(cqe *CompletionQueueEvent) (uint64, error) {
 	if cqe == nil {
 		return 0, errors.New("cqe is nil")
