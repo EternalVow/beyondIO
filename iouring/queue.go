@@ -487,9 +487,9 @@ func PrepSocketDirectAlloc(sqe *SubmissionQueueEntry, domain int, stype int, pro
 	return nil
 }
 
-func PrepCqReady(ioUring *Ring) int32 {
+func PrepCqReady(ioUring *Ring) uint32 {
 
-	return atomic.LoadInt32(ioUring.cqRing.tail) - *ioUring.cqRing.head
+	return atomic.LoadUint32(ioUring.cqRing.tail) - *ioUring.cqRing.head
 }
 
 //func WaitCqeNr(ioUring *Ring, cqe_ptr **CompletionQueueEvent, wait_nr uint) bool {
@@ -509,7 +509,7 @@ func peekCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, nr_available *uint32
 		shift = 1
 	}
 	for {
-		tail := atomic.LoadInt32(ioUring.cqRing.tail)
+		tail := atomic.LoadUint32(ioUring.cqRing.tail)
 		head := *ioUring.cqRing.head
 
 		cqe = nil
@@ -548,12 +548,12 @@ func CqAdvance(ioUring *Ring, nr uint32) {
 		 * Ensure that the kernel only sees the new value of the head
 		 * index after the CQEs have been read.
 		 */
-		atomic.StoreInt32(cq.head, *cq.head+int32(nr))
+		atomic.StoreUint32(cq.head, *cq.head+nr)
 	}
 }
 
 func CqRingNeedsFlush(ioUring *Ring) bool {
-	return (uint32(atomic.LoadInt32(ioUring.sqRing.flags)) & (SQCQOverflow | SQTaskrun)) != 0
+	return (uint32(atomic.LoadUint32(ioUring.sqRing.flags)) & (SQCQOverflow | SQTaskrun)) != 0
 }
 
 // cq_ring_needs_enter
@@ -707,7 +707,7 @@ func GetSqe(ioUring *Ring) *SubmissionQueueEntry {
 	if (ioUring.flags & SetupSQPoll) == 0 {
 		head = uint32(*sq.head)
 	} else {
-		head = uint32(atomic.LoadInt32(sq.head))
+		head = uint32(atomic.LoadUint32(sq.head))
 
 	}
 

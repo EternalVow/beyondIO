@@ -133,11 +133,11 @@ type CompletionQueueEvent struct {
 
 // liburing: io_uring_sq
 type SubmissionQueue struct {
-	head        *int32
-	tail        *int32
+	head        *uint32
+	tail        *uint32
 	ringMask    *uint32
 	ringEntries *uint32
-	flags       *int32
+	flags       *uint32
 	dropped     *uint32
 	array       *uint32
 	sqes        []*SubmissionQueueEntry
@@ -154,8 +154,8 @@ type SubmissionQueue struct {
 
 // liburing: io_uring_cq
 type CompletionQueue struct {
-	head        *int32
-	tail        *int32
+	head        *uint32
+	tail        *uint32
 	ringMask    *uint32
 	ringEntries *uint32
 	flags       *uint32
