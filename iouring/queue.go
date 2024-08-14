@@ -517,7 +517,9 @@ func peekCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, nr_available *uint32
 		if available == 0 {
 			break
 		}
-		cqe = ioUring.cqRing.cqes[(uint32(head)&mask)<<shift]
+
+		cqeNewPoiter := uintptr(unsafe.Pointer(ioUring.cqRing.cqes)) + uintptr(((head&mask)<<shift)*unsafe.Sizeof(CompletionQueue{}))
+		cqe = (*CompletionQueueEvent)(unsafe.Pointer(cqeNewPoiter))
 		if ioUring.features&FeatExtArg == 0 && cqe.UserData == LiburingUdataTimeout {
 			if cqe.Res < 0 {
 				err = fmt.Errorf("cqe.Res err = %v", err)
@@ -714,7 +716,10 @@ func GetSqe(ioUring *Ring) *SubmissionQueueEntry {
 	if next-head <= *sq.ringEntries {
 		//struct io_uring_sqe *sqe;
 
-		sqe := sq.sqes[(sq.sqeTail&*sq.ringMask)<<shift]
+		sqeNewPoiter := uintptr(unsafe.Pointer(sq.sqes)) + uintptr(((sq.sqeTail&*sq.ringMask)<<shift)*unsafe.Sizeof(SubmissionQueueEntry{}))
+		sqe := (*SubmissionQueueEntry)(unsafe.Pointer(sqeNewPoiter))
+
+		//sqe := sq.sqes[(sq.sqeTail&*sq.ringMask)<<shift]
 		sq.sqeTail = next
 		InitializeSqe(sqe)
 		return sqe

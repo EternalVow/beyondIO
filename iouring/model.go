@@ -140,7 +140,7 @@ type SubmissionQueue struct {
 	flags       *uint32
 	dropped     *uint32
 	array       *uint32
-	sqes        []*SubmissionQueueEntry
+	sqes        *SubmissionQueueEntry
 
 	ringSize uint
 	ringPtr  unsafe.Pointer
@@ -160,7 +160,7 @@ type CompletionQueue struct {
 	ringEntries *uint32
 	flags       *uint32
 	overflow    *uint32
-	cqes        []*CompletionQueueEvent
+	cqes        *CompletionQueueEvent
 
 	ringSize uint
 	ringPtr  unsafe.Pointer
