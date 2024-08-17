@@ -133,6 +133,17 @@ func PrepWriteFixed(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbyte
 	return nil
 }
 
+func PrepTimeout(sqe *SubmissionQueueEntry, ts *syscall.Timespec, count uint64, flags int) error {
+	err := PrepRw(int(OpTimeout), sqe, -1, unsafe.Pointer(ts), 1, count)
+	if err != nil {
+		return err
+	}
+
+	sqe.TimeoutFlags = uint32(flags)
+
+	return nil
+}
+
 func PrepRecvmsg(sqe *SubmissionQueueEntry, fd int, msgh *syscall.Msghdr, flags int) error {
 	err := PrepRw(int(OpRecvmsg), sqe, fd, unsafe.Pointer(msgh), 1, 0)
 	if err != nil {
@@ -487,7 +498,7 @@ func PrepSocketDirectAlloc(sqe *SubmissionQueueEntry, domain int, stype int, pro
 	return nil
 }
 
-func PrepCqReady(ioUring *Ring) uint32 {
+func CqReady(ioUring *Ring) uint32 {
 
 	return atomic.LoadUint32(ioUring.cqRing.tail) - *ioUring.cqRing.head
 }
@@ -554,6 +565,38 @@ func CqAdvance(ioUring *Ring, nr uint32) {
 	}
 }
 
+/*
+ * Returns true if we're not using SQ thread (thus nobody submits but us)
+ * or if IORING_SQ_NEED_WAKEUP is set, so submit thread must be explicitly
+ * awakened. For the latter case, we set the thread wakeup flag.
+ * If no SQEs are ready for submission, returns false.
+ */
+// sq_ring_needs_enter
+func SqRingNeedsEnter(ioUring *Ring, submit uint, flags *uint32) bool {
+	if submit == 0 {
+		return false
+	}
+
+	if ioUring.flags&SetupSQPoll == 0 {
+		return true
+	}
+
+	/*
+	 * Ensure the kernel can see the store to the SQ tail before we read
+	 * the flags.
+	 */
+
+	/*	io_uring_smp_mb();
+
+		if (uring_unlikely(IO_URING_READ_ONCE(*ring->sq.kflags) &
+			IORING_SQ_NEED_WAKEUP)) {
+			*flags |= IORING_ENTER_SQ_WAKEUP;
+			return true;
+		}*/
+
+	return false
+}
+
 func CqRingNeedsFlush(ioUring *Ring) bool {
 	return (uint32(atomic.LoadUint32(ioUring.sqRing.flags)) & (SQCQOverflow | SQTaskrun)) != 0
 }
@@ -606,9 +649,9 @@ func getCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, data *GetData) error 
 			break
 		}
 
-		if looped && data.HasTs != 0 {
+		if looped && data.HasTs {
 			arg := (*GeteventsArg)(data.Arg)
-			if cqe == nil && arg.ts != 0 && err == nil {
+			if cqe == nil && arg.ts != nil && err == nil {
 				err = fmt.Errorf("-EAGAIN")
 				break
 			}
@@ -734,4 +777,254 @@ func CqeGetData(cqe *CompletionQueueEvent) (uint64, error) {
 	}
 
 	return cqe.UserData, nil
+}
+
+func GetEvents(ioUring *Ring) (uint, error) {
+
+	var flags = EnterGetevents
+
+	if (ioUring.intFlags & IntFlagRegRing) != 0 {
+		flags |= EnterRegisteredRing
+	}
+	return SyscallIoUringEnter(uint32(ioUring.enterRingFd), 0, 0, flags, nil)
+}
+
+/*
+ * Fill in an array of IO completions up to count, if any are available.
+ * Returns the amount of IO completions filled.
+ */
+func PeekBatchCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, count uint) uint {
+	var (
+		ready            uint
+		overflow_checked bool
+		shift            int
+	)
+	if ioUring.flags&SetupCQE32 != 0 {
+		shift = 1
+	}
+
+	for {
+		ready = uint(CqReady(ioUring))
+		if ready != 0 {
+			head := *ioUring.cqRing.head
+			mask := *ioUring.cqRing.ringMask
+			var last uint
+			var i int
+			if count > ready {
+				count -= ready
+			}
+			last = uint(head) + count
+
+			for uint(head) != last {
+				//cqes[i] = &ring->cq.cqes[(head & mask) << shift];
+				cqeNewPoiter := uintptr(unsafe.Pointer(ioUring.cqRing.cqes)) + uintptr(((head&mask)<<shift)*unsafe.Sizeof(CompletionQueue{}))
+				cqePointer := (*CompletionQueue)(unsafe.Pointer(cqeNewPoiter))
+
+				cqes_i_ptr := (**CompletionQueue)(unsafe.Pointer(uintptr(unsafe.Pointer(cqe_ptr)) + uintptr(uintptr(i)*unsafe.Sizeof(uint32(0)))))
+				*cqes_i_ptr = cqePointer
+
+				head++
+				i++
+			}
+
+			return count
+		}
+
+		if overflow_checked {
+			return 0
+		}
+
+		if CqRingNeedsFlush(ioUring) {
+			GetEvents(ioUring)
+			overflow_checked = true
+			continue
+		} else {
+			break
+		}
+
+	}
+
+	return 0
+
+}
+
+/*
+ * Sync internal state with kernel ring state on the SQ side. Returns the
+ * number of pending items in the SQ ring, for the shared ring.
+ */
+func FlushSq(ioUring *Ring) uint {
+
+	sq := ioUring.sqRing
+	tail := sq.sqeTail
+	if sq.sqeHead != tail {
+		sq.sqeHead = tail
+	}
+
+	/*
+	 * Ensure kernel sees the SQE updates before the tail update.
+	 */
+	if (ioUring.flags & SetupSQPoll) == 0 {
+		*sq.tail = tail
+	} else {
+		atomic.StoreUint32(sq.tail, tail)
+	}
+
+	/*
+	* This load needs to be atomic, since sq->khead is written concurrently
+	* by the kernel, but it doesn't need to be load_acquire, since the
+	* kernel doesn't store to the submission queue; it advances khead just
+	* to indicate that it's finished reading the submission queue entries
+	* so they're available for us to write to.
+	 */
+	return uint(tail - atomic.LoadUint32(sq.head))
+}
+
+/*
+ * If we have kernel support for IORING_ENTER_EXT_ARG, then we can use that
+ * more efficiently than queueing an internal timeout command.
+ */
+
+func WaitCqesNew(ioUring *Ring, cqe_ptr **CompletionQueueEvent, wait_nr uint, ts *syscall.Timespec, sigmask *unix.Sigset_t) error {
+
+	arg := GeteventsArg{
+		sigmask:    *sigmask,
+		sigmask_sz: nSig / 8,
+		ts:         ts,
+	}
+
+	data := GetData{
+		WaitNr:   uint64(wait_nr),
+		GetFlags: uint64(EnterExtArg),
+		Sz:       int(unsafe.Sizeof(arg)),
+		HasTs:    ts != nil,
+		Arg:      unsafe.Pointer(&arg),
+	}
+
+	return getCqe(ioUring, cqe_ptr, &data)
+
+}
+
+/*
+ * Submit sqes acquired from io_uring_get_sqe() to the kernel.
+ *
+ * Returns number of sqes submitted
+ */
+//__io_uring_submit
+func submit(ioUring *Ring, submitted uint, wait_nr uint, getevents bool) (uint, error) {
+
+	cq_needs_enter := getevents || (wait_nr > 0) || CqRingNeedsEnter(ioUring)
+	var flags uint32
+	var ret uint
+	var err error
+
+	if SqRingNeedsEnter(ioUring, submitted, &flags) || cq_needs_enter {
+		if cq_needs_enter {
+			flags |= EnterGetevents
+		}
+
+		if ioUring.intFlags&IntFlagRegRing != 0 {
+			flags |= EnterRegisteredRing
+		}
+
+		ret, err = SyscallIoUringEnter(uint32(ioUring.enterRingFd), uint32(submitted), uint32(wait_nr), flags, nil)
+		if err != nil {
+			return 0, err
+		}
+
+	} else {
+		return submitted, nil
+	}
+	return ret, nil
+}
+
+// __io_uring_submit_and_wait
+func SubmitAndWait(ioUring *Ring, wait_nr uint) (uint, error) {
+	return submit(ioUring, FlushSq(ioUring), wait_nr, false)
+}
+
+func Submit(ioUring *Ring) (uint, error) {
+	return SubmitAndWait(ioUring, 0)
+}
+
+/*
+ * Like io_uring_wait_cqe(), except it accepts a timeout value as well. Note
+ * that an sqe is used internally to handle the timeout. For kernel doesn't
+ * support IORING_FEAT_EXT_ARG, applications using this function must never
+ * set sqe->user_data to LIBURING_UDATA_TIMEOUT!
+ *
+ * For kernels without IORING_FEAT_EXT_ARG (5.10 and older), if 'ts' is
+ * specified, the application need not call io_uring_submit() before
+ * calling this function, as we will do that on its behalf. From this it also
+ * follows that this function isn't safe to use for applications that split SQ
+ * and CQ handling between two threads and expect that to work without
+ * synchronization, as this function manipulates both the SQ and CQ side.
+ *
+ * For kernels with IORING_FEAT_EXT_ARG, no implicit submission is done and
+ * hence this function is safe to use for applications that split SQ and CQ
+ * handling between two threads.
+ */
+func SubmitTimeout(ioUring *Ring, wait_nr uint, ts *syscall.Timespec) (uint, error) {
+
+	var ret uint
+	var err error
+
+	sqe := GetSqe(ioUring)
+	if sqe == nil {
+		ret, err = Submit(ioUring)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if ret < 0 {
+		return ret, nil
+	}
+	sqe = GetSqe(ioUring)
+	if sqe == nil {
+		return 0, errors.New("EAGAIN")
+	}
+
+	PrepTimeout(sqe, ts, uint64(wait_nr), 0)
+	sqe.UserData = LiburingUdataTimeout
+
+	return FlushSq(ioUring), nil
+
+}
+
+func WaitCqes(ioUring *Ring, cqe_ptr **CompletionQueueEvent, wait_nr uint, ts *syscall.Timespec, sigmask *unix.Sigset_t) (uint, error) {
+	var toSubmit uint
+	var err error
+	if ts != nil {
+		if ioUring.features&FeatExtArg > 0 {
+			return 0, WaitCqesNew(ioUring, cqe_ptr, wait_nr, ts, sigmask)
+		}
+		toSubmit, err = SubmitTimeout(ioUring, wait_nr, ts)
+		if toSubmit < 0 {
+			return toSubmit, err
+		}
+
+	}
+
+	return 0, GetCqe(ioUring, cqe_ptr, uint64(toSubmit), uint64(wait_nr), sigmask)
+}
+
+/*
+ * See io_uring_wait_cqes() - this function is the same, it just always uses
+ * '1' as the wait_nr.
+ */
+func WaitCqesTimeout(ioUring *Ring, cqe_ptr **CompletionQueueEvent, wait_nr uint, ts *syscall.Timespec) (uint, error) {
+	return WaitCqes(ioUring, cqe_ptr, 1, ts, nil)
+}
+
+// io_uring_submit_and_get_events
+func SubmitAndGetEvents(ioUring *Ring) (uint, error) {
+	return submit(ioUring, FlushSq(ioUring), 0, true)
+}
+
+// __io_uring_sqring_wait
+func SqringWait(ioUring *Ring) (uint, error) {
+	flags := EnterSQWait
+	if (ioUring.flags & IntFlagRegRing) == 0 {
+		flags |= EnterRegisteredRing
+	}
+	return SyscallIoUringEnter(uint32(ioUring.enterRingFd), 0, 0, flags, nil)
 }

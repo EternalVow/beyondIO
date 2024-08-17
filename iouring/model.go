@@ -1,6 +1,10 @@
 package iouring
 
-import "unsafe"
+import (
+	"golang.org/x/sys/unix"
+	"syscall"
+	"unsafe"
+)
 
 // liburing: io_sqring_offsets
 type SQRingOffsets struct {
@@ -110,15 +114,16 @@ type SubmissionQueueEntry struct {
 	_pad2      [1]uint64
 	// TODO: add __u8	cmd[0];
 
-	SpliceOffIn int32
-	SpliceFlags int32
-	RwFlags     uint8
-	BufIndex    uint64
-	BufGroup    uint64
-	MsgFlags    uint8
-	AcceptFlags uint8
-	CancelFlags uint32
-	FileIndex   uint32
+	SpliceOffIn  int32
+	SpliceFlags  int32
+	RwFlags      uint8
+	BufIndex     uint64
+	BufGroup     uint64
+	MsgFlags     uint8
+	AcceptFlags  uint8
+	CancelFlags  uint32
+	TimeoutFlags uint32
+	FileIndex    uint32
 }
 
 // liburing: io_uring_cqe
@@ -186,13 +191,13 @@ type GetData struct {
 	WaitNr   uint64
 	GetFlags uint64
 	Sz       int
-	HasTs    int
+	HasTs    bool
 	Arg      unsafe.Pointer
 }
 
 type GeteventsArg struct {
-	sigmask    uint64
+	sigmask    unix.Sigset_t
 	sigmask_sz uint32
 	pad        uint32
-	ts         uint64
+	ts         *syscall.Timespec
 }

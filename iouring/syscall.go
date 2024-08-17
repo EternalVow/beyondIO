@@ -6,7 +6,7 @@ import (
 	"unsafe"
 )
 
-func IoUringEnter(fd uint32, submitted uint32, waitNr uint32, flags uint32, sig unsafe.Pointer) (uint, error) {
+func SyscallIoUringEnter(fd uint32, submitted uint32, waitNr uint32, flags uint32, sig unsafe.Pointer) (uint, error) {
 	return SyscallIoUringEnter2(fd, submitted, waitNr, flags, sig, nSig/szDivider)
 }
 
