@@ -76,3 +76,16 @@ func mmap(addr uintptr, length uintptr, prot int, flags int, fd int, offset int6
 
 //go:linkname munmap syscall.munmap
 func munmap(addr uintptr, length uintptr) (err error)
+
+func increaseRlimitNofile(nr uint64) error {
+	var rLimit syscall.Rlimit
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if err == nil {
+		return err
+	}
+	if rLimit.Cur < nr {
+		rLimit.Cur += nr
+		syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	}
+	return nil
+}

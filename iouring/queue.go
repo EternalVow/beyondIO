@@ -78,6 +78,7 @@ func PrepTree(sqe *SubmissionQueueEntry, fd_in int, fd_out int, nbytes uint32, s
 	return nil
 }
 
+// io_uring_prep_readv
 func PrepReadv(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
 	err := PrepRw(int(OpReadv), sqe, fd, unsafe.Pointer(iovec), nr_vecs, 0)
 	if err != nil {
@@ -107,6 +108,7 @@ func PrepReadFixed(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes
 	return nil
 }
 
+// io_uring_prep_writev
 func PrepReadWritev(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
 	err := PrepRw(int(OpWritev), sqe, fd, unsafe.Pointer(iovec), nr_vecs, offset)
 	if err != nil {
@@ -154,6 +156,7 @@ func PrepRecvmsg(sqe *SubmissionQueueEntry, fd int, msgh *syscall.Msghdr, flags 
 	return nil
 }
 
+// io_uring_prep_recvmsg_multishot
 func PrepRecvmsgMultishot(sqe *SubmissionQueueEntry, fd int, msgh *syscall.Msghdr, flags int) error {
 	err := PrepRecvmsg(sqe, fd, msgh, flags)
 	if err != nil {
@@ -240,6 +243,7 @@ func PrepCancel(sqe *SubmissionQueueEntry, user_data unsafe.Pointer, flags int) 
 	return PrepCancel64(sqe, *(*uint64)(user_data), flags)
 }
 
+// io_uring_prep_cancel_fd
 func PrepCancelFd(sqe *SubmissionQueueEntry, fd int, flags uint) error {
 	err := PrepRw(int(OpAsyncCancel), sqe, fd, nil, 0, 0)
 	if err != nil {
@@ -250,6 +254,7 @@ func PrepCancelFd(sqe *SubmissionQueueEntry, fd int, flags uint) error {
 	return nil
 }
 
+// io_uring_prep_connect
 func PrepConnect(sqe *SubmissionQueueEntry, fd int, addr *syscall.Sockaddr, addrlen uint64) error {
 	err := PrepRw(int(OpConnect), sqe, fd, unsafe.Pointer(addr), 0, addrlen)
 	if err != nil {
@@ -296,6 +301,7 @@ func PrepFallocate(sqe *SubmissionQueueEntry, fd int, mode int, offset uint64, l
 	return nil
 }
 
+// io_uring_prep_close
 func PrepClose(sqe *SubmissionQueueEntry, fd int) error {
 	err := PrepRw(int(OpClose), sqe, fd, nil, 0, 0)
 	if err != nil {
@@ -305,6 +311,7 @@ func PrepClose(sqe *SubmissionQueueEntry, fd int) error {
 	return nil
 }
 
+// io_uring_prep_close_direct
 func PrepCloseDirect(sqe *SubmissionQueueEntry, file_index uint32) error {
 	err := PrepClose(sqe, 0)
 	if err != nil {
@@ -399,6 +406,7 @@ func PrepReadSendZcFixed(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Point
 	return nil
 }
 
+// prep_sendmsg_zc
 func PrepSendmsgZc(sqe *SubmissionQueueEntry, fd int, msgh *syscall.Msghdr, flags int) error {
 
 	err := PrepSendmsg(sqe, fd, msgh, flags)
@@ -455,6 +463,7 @@ func PrepRemoveBuffers(sqe *SubmissionQueueEntry, nr int, bgid int) error {
 	return nil
 }
 
+// io_uring_prep_shutdown
 func PrepShutdown(sqe *SubmissionQueueEntry, fd int, how int) error {
 	err := PrepRw(int(OpShutdown), sqe, fd, nil, uint32(how), 0)
 	if err != nil {
@@ -463,6 +472,7 @@ func PrepShutdown(sqe *SubmissionQueueEntry, fd int, how int) error {
 	return nil
 }
 
+// io_uring_prep_socket
 func PrepSocket(sqe *SubmissionQueueEntry, domain int, stype int, protocol int, flag uint) error {
 	err := PrepRw(int(OpSocket), sqe, domain, nil, uint32(protocol), uint64(stype))
 	if err != nil {
@@ -472,6 +482,7 @@ func PrepSocket(sqe *SubmissionQueueEntry, domain int, stype int, protocol int, 
 	return nil
 }
 
+// io_uring_prep_socket_direct
 func PrepSocketDirect(sqe *SubmissionQueueEntry, domain int, stype int, protocol int, file_index uint32, flag uint) error {
 	err := PrepRw(int(OpSocket), sqe, domain, nil, uint32(protocol), uint64(stype))
 	if err != nil {
@@ -486,6 +497,7 @@ func PrepSocketDirect(sqe *SubmissionQueueEntry, domain int, stype int, protocol
 	return nil
 }
 
+// io_uring_prep_socket_direct_alloc
 func PrepSocketDirectAlloc(sqe *SubmissionQueueEntry, domain int, stype int, protocol int, flag uint) error {
 	err := PrepRw(int(OpSocket), sqe, domain, nil, uint32(protocol), uint64(stype))
 	if err != nil {
@@ -562,6 +574,13 @@ func CqAdvance(ioUring *Ring, nr uint32) {
 		 * index after the CQEs have been read.
 		 */
 		atomic.StoreUint32(cq.head, *cq.head+nr)
+	}
+}
+
+// io_uring_cqe_seen
+func CqeSeen(ioUring *Ring, cqe *CompletionQueueEvent) {
+	if cqe != nil {
+		CqAdvance(ioUring, 1)
 	}
 }
 
@@ -990,6 +1009,7 @@ func SubmitTimeout(ioUring *Ring, wait_nr uint, ts *syscall.Timespec) (uint, err
 
 }
 
+// io_uring_wait_cqe
 func WaitCqes(ioUring *Ring, cqe_ptr **CompletionQueueEvent, wait_nr uint, ts *syscall.Timespec, sigmask *unix.Sigset_t) (uint, error) {
 	var toSubmit uint
 	var err error
@@ -1027,4 +1047,37 @@ func SqringWait(ioUring *Ring) (uint, error) {
 		flags |= EnterRegisteredRing
 	}
 	return SyscallIoUringEnter(uint32(ioUring.enterRingFd), 0, 0, flags, nil)
+}
+
+// io_uring_queue_exit
+func QueueExit(ioUring *Ring) {
+	sq := ioUring.sqRing
+	cq := ioUring.cqRing
+	var sqe_size uint64
+
+	if sq.ringSize == 0 {
+		sqe_size = uint64(unsafe.Sizeof(SubmissionQueueEntry{}))
+		if ioUring.flags&SetupSQE128 != 0 {
+			sqe_size += 64
+		}
+		munmap(uintptr(unsafe.Pointer(sq.sqes)), uintptr(sqe_size*uint64(*sq.ringEntries)))
+		UnmapRings(sq, cq)
+	} else {
+		if ioUring.flags&IntFlagAppMem == 0 {
+			munmap(uintptr(unsafe.Pointer(sq.sqes)), uintptr(*sq.ringEntries)*unsafe.Sizeof(SubmissionQueueEntry{}))
+			UnmapRings(sq, cq)
+		}
+	}
+
+	/*
+	 * Not strictly required, but frees up the slot we used now rather
+	 * than at process exit time.
+	 */
+	if (ioUring.intFlags & IntFlagRegRing) != 0 {
+		DoUnregisterRingFd(ioUring)
+	}
+
+	if ioUring.ringFd != -1 {
+		syscall.Close(ioUring.ringFd)
+	}
 }

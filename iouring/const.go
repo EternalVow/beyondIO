@@ -18,6 +18,9 @@ const (
 	hugePageSize        uint = 2 * 1024 * 1024
 
 	LiburingUdataTimeout = -1
+
+	INTMax32 = int32(^uint32((0)) >> 1)
+	INTMin32 = ^INTMax32
 )
 
 const FileIndexAlloc uint32 = 4294967295
@@ -236,4 +239,49 @@ const (
 	offPbufRing  uint64 = 0x80000000
 	offPbufShift uint64 = 16
 	offMmapMask  uint64 = 0xf8000000
+)
+
+const (
+	RegisterBuffers uint32 = iota
+	UnregisterBuffers
+
+	RegisterFiles
+	UnregisterFiles
+
+	RegisterEventFD
+	UnregisterEventFD
+
+	RegisterFilesUpdate
+	RegisterEventFDAsync
+	RegisterProbe
+
+	RegisterPersonality
+	UnregisterPersonality
+
+	RegisterRestrictions
+	RegisterEnableRings
+
+	RegisterFiles2
+	RegisterFilesUpdate2
+	RegisterBuffers2
+	RegisterBuffersUpdate
+
+	RegisterIOWQAff
+	UnregisterIOWQAff
+
+	RegisterIOWQMaxWorkers
+
+	RegisterRingFDs
+	UnregisterRingFDs
+
+	RegisterPbufRing
+	UnregisterPbufRing
+
+	RegisterSyncCancel
+
+	RegisterFileAllocRange
+
+	RegisterLast
+
+	RegisterUseRegisteredRing = 1 << 31
 )

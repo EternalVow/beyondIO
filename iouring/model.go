@@ -201,3 +201,9 @@ type GeteventsArg struct {
 	pad        uint32
 	ts         *syscall.Timespec
 }
+
+type RsrcUpdate struct {
+	offset uint32
+	resv   uint32
+	data   uint64
+}
