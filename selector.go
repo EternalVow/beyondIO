@@ -7,12 +7,19 @@ import (
 	"github.com/panjf2000/gnet/v2/pkg/logging"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
-	"github.com/mohae/deepcopy"
 	"io"
 	"os"
 	"runtime"
 	"syscall"
+	"unsafe"
 )
+
+
+
+type  OperationInfo struct {
+    IOuringOpcode uint8
+
+}
 
 type Selector interface {
 	AddRead(ctx context.Context,fd int , edgeTriggered bool) error
@@ -130,7 +137,8 @@ func (s IoUringSelector) Polling(callback func(fd int)error) error {
 				if ev.Events & unix.EPOLLIN != 0 {
 					// read
 					sqe := s.Ring.GetSqe(s.Ring.Ring)
-					//sqe := &iouring.SubmissionQueueEntry{}
+					operationInfo := &OperationInfo{IOuringOpcode: iouring.OpRead}
+					sqe.UserData = uint64(uintptr(unsafe.Pointer(operationInfo)))
 
 					err := s.Ring.PrepRead(sqe, fd,nil, 0, 0)
 					if err != nil {
@@ -139,9 +147,9 @@ func (s IoUringSelector) Polling(callback func(fd int)error) error {
 					s.Ring.Submit(s.Ring.Ring)
 				}else if ev.Events & unix.EPOLLOUT != 0 {
 					//write
-					// read
 					sqe := s.Ring.GetSqe(s.Ring.Ring)
-					//sqe := &iouring.SubmissionQueueEntry{}
+					operationInfo := &OperationInfo{IOuringOpcode: iouring.OpWrite}
+					sqe.UserData = uint64(uintptr(unsafe.Pointer(operationInfo)))
 					err := s.Ring.PrepWrite(sqe, fd, nil, 0, 0)
 					if err != nil {
 						return err
@@ -172,15 +180,18 @@ func (s IoUringSelector) WaitCqe(callback func(fd int)error) error{
 	if cqe.Res < 0 {
 		logging.Errorf("wait cqe completion failed")
 	}else {
-		 if cqe.UserData == 0 {
-			 if callback == eventloop.accept0 {
+		operationInfo  := ( *OperationInfo )(unsafe.Pointer(uintptr(cqe.UserData)))
 
-			 }
-			 handle_accept(ctx, cqe);
-		 }else {
+		switch operationInfo.IOuringOpcode {
+		case iouring.OpRead:
+			handle_accept(ctx, cqe);
 
-			 handle_read(ctx, cqe, (int)cqe->user_data);
-		 }
+		case iouring.OpWrite:
+			handle_read(ctx, cqe, (int)cqe->user_data);
+
+		default:
+
+		}
 	}
 
 	s.Ring.CqeSeen(s.Ring.Ring,cqe)
