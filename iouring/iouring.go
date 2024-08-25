@@ -59,10 +59,13 @@ type IIouring interface {
 }
 
 func InitIouring() (*Iouring, error) {
-	return &Iouring{}, nil
+	return &Iouring{
+		Ring: &Ring{},
+	}, nil
 }
 
 type Iouring struct {
+	Ring *Ring
 }
 
 func (i Iouring) GetSqe(ioUring *Ring) *SubmissionQueueEntry {
@@ -74,6 +77,10 @@ func (i Iouring) SqeSetData(sqe *SubmissionQueueEntry, data uint64) error {
 
 }
 
+func (i Iouring) PrepRead(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes uint32, offset uint64) error {
+	return PrepRead(sqe, fd, buf, nbytes, offset)
+}
+
 func (i Iouring) PrepReadv(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
 	return PrepReadv(sqe, fd, iovec, nr_vecs, offset)
 }
@@ -82,16 +89,24 @@ func (i Iouring) PrepReadv2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Io
 	return PrepReadv2(sqe, fd, iovec, nr_vecs, offset, flags)
 }
 
-func (i Iouring) PrepReadWritev(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
-	return PrepReadWritev(sqe, fd, iovec, nr_vecs, offset)
+func (i Iouring) PrepWrite(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes uint32, offset uint64) error {
+	return PrepWrite(sqe, fd, buf, nbytes, offset)
 }
 
-func (i Iouring) PrepReadWritev2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64, flags int) error {
-	return PrepReadWritev2(sqe, fd, iovec, nr_vecs, offset, flags)
+func (i Iouring) PrepWritev(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
+	return PrepWritev(sqe, fd, iovec, nr_vecs, offset)
+}
+
+func (i Iouring) PrepWritev2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64, flags int) error {
+	return PrepWritev2(sqe, fd, iovec, nr_vecs, offset, flags)
 }
 
 func (i Iouring) WaitCqes(ioUring *Ring, cqe_ptr **CompletionQueueEvent, wait_nr uint, ts *syscall.Timespec, sigmask *unix.Sigset_t) (uint, error) {
 	return WaitCqes(ioUring, cqe_ptr, wait_nr, ts, sigmask)
+}
+
+func (i Iouring) WaitCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent) (uint, error) {
+	return WaitCqes(ioUring, cqe_ptr, 0, nil, nil)
 }
 
 func (i Iouring) PeekCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent) error {

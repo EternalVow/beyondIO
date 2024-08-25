@@ -109,7 +109,7 @@ func PrepReadFixed(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes
 }
 
 // io_uring_prep_writev
-func PrepReadWritev(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
+func PrepWritev(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64) error {
 	err := PrepRw(int(OpWritev), sqe, fd, unsafe.Pointer(iovec), nr_vecs, offset)
 	if err != nil {
 		return err
@@ -117,8 +117,8 @@ func PrepReadWritev(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_
 	return nil
 }
 
-func PrepReadWritev2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64, flags int) error {
-	err := PrepReadWritev(sqe, fd, iovec, nr_vecs, offset)
+func PrepWritev2(sqe *SubmissionQueueEntry, fd int, iovec *syscall.Iovec, nr_vecs uint32, offset uint64, flags int) error {
+	err := PrepWritev(sqe, fd, iovec, nr_vecs, offset)
 	if err != nil {
 		return err
 	}
@@ -340,7 +340,7 @@ func PrepReadMultishot(sqe *SubmissionQueueEntry, fd int, nbytes uint32, offset 
 	return nil
 }
 
-func PrepReadWrite(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes uint32, offset uint64) error {
+func PrepWrite(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes uint32, offset uint64) error {
 	err := PrepRw(int(OpWrite), sqe, fd, buf, nbytes, offset)
 	if err != nil {
 		return err
@@ -348,7 +348,7 @@ func PrepReadWrite(sqe *SubmissionQueueEntry, fd int, buf unsafe.Pointer, nbytes
 	return nil
 }
 
-func PrepReadSend(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len uint32, flags int) error {
+func PrepSend(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len uint32, flags int) error {
 	err := PrepRw(int(OpSend), sqe, sockfd, buf, len, 0)
 	if err != nil {
 		return err
@@ -358,7 +358,7 @@ func PrepReadSend(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len
 }
 
 func PrepReadBundle(sqe *SubmissionQueueEntry, sockfd int, len uint32, flags int) error {
-	err := PrepReadSend(sqe, sockfd, nil, len, flags)
+	err := PrepSend(sqe, sockfd, nil, len, flags)
 	if err != nil {
 		return err
 	}
@@ -372,8 +372,8 @@ func PrepSendSetAddr(sqe *SubmissionQueueEntry, dest_addr *syscall.Sockaddr, add
 	return nil
 }
 
-func PrepReadSendto(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len uint32, flags int, addr *syscall.Sockaddr, addr_len uint64) error {
-	err := PrepReadSend(sqe, sockfd, buf, len, flags)
+func PrepSendto(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len uint32, flags int, addr *syscall.Sockaddr, addr_len uint64) error {
+	err := PrepSend(sqe, sockfd, buf, len, flags)
 	if err != nil {
 		return err
 	}
@@ -384,7 +384,7 @@ func PrepReadSendto(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, l
 	return nil
 }
 
-func PrepReadSendZc(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len uint32, flags int, zc_flags uint16) error {
+func PrepSendZc(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len uint32, flags int, zc_flags uint16) error {
 	err := PrepRw(int(OpSendZC), sqe, sockfd, buf, len, 0)
 	if err != nil {
 		return err
@@ -394,9 +394,9 @@ func PrepReadSendZc(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, l
 	return nil
 }
 
-func PrepReadSendZcFixed(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len uint32, flags int, zc_flags uint16, buf_index int) error {
+func PrepSendZcFixed(sqe *SubmissionQueueEntry, sockfd int, buf unsafe.Pointer, len uint32, flags int, zc_flags uint16, buf_index int) error {
 
-	err := PrepReadSendZc(sqe, sockfd, buf, len, flags, zc_flags)
+	err := PrepSendZc(sqe, sockfd, buf, len, flags, zc_flags)
 	if err != nil {
 		return err
 	}
@@ -607,7 +607,7 @@ func SqRingNeedsEnter(ioUring *Ring, submit uint, flags *uint32) bool {
 
 	/*	io_uring_smp_mb();
 
-		if (uring_unlikely(IO_URING_READ_ONCE(*ring->sq.kflags) &
+		if (uring_unlikely(IO_URING_READ_ONCE(*Ring->sq.kflags) &
 			IORING_SQ_NEED_WAKEUP)) {
 			*flags |= IORING_ENTER_SQ_WAKEUP;
 			return true;
@@ -835,7 +835,7 @@ func PeekBatchCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, count uint) uin
 			last = uint(head) + count
 
 			for uint(head) != last {
-				//cqes[i] = &ring->cq.cqes[(head & mask) << shift];
+				//cqes[i] = &Ring->cq.cqes[(head & mask) << shift];
 				cqeNewPoiter := uintptr(unsafe.Pointer(ioUring.cqRing.cqes)) + uintptr(((head&mask)<<shift)*unsafe.Sizeof(CompletionQueue{}))
 				cqePointer := (*CompletionQueue)(unsafe.Pointer(cqeNewPoiter))
 
@@ -868,8 +868,8 @@ func PeekBatchCqe(ioUring *Ring, cqe_ptr **CompletionQueueEvent, count uint) uin
 }
 
 /*
- * Sync internal state with kernel ring state on the SQ side. Returns the
- * number of pending items in the SQ ring, for the shared ring.
+ * Sync internal state with kernel Ring state on the SQ side. Returns the
+ * number of pending items in the SQ Ring, for the shared Ring.
  */
 func FlushSq(ioUring *Ring) uint {
 

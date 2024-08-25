@@ -30,7 +30,7 @@ const FileIndexAlloc uint32 = 4294967295
  */
 const (
 	SQNeedWakeup uint32 = 1 << iota /* needs io_uring_enter wakeup */
-	SQCQOverflow                    /* CQ ring is overflown */
+	SQCQOverflow                    /* CQ Ring is overflown */
 	SQTaskrun                       /* task should enter the kernel */
 )
 

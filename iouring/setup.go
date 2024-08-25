@@ -109,7 +109,7 @@ func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue
 
 	sq.sqes = (*SubmissionQueueEntry)(ptr)
 	if mem_used <= buf_size {
-		/* clear ring sizes, we have just one mmap() to undo */
+		/* clear Ring sizes, we have just one mmap() to undo */
 		sq.ringPtr = unsafe.Pointer(uintptr(unsafe.Pointer(sq.sqes)) + uintptr(sqes_mem))
 		cq.ringSize = 0
 		sq.ringSize = 0
