@@ -17,7 +17,10 @@
 
 package socket
 
-import "golang.org/x/sys/unix"
+import (
+	"golang.org/x/sys/unix"
+	"unsafe"
+)
 
 // Writev calls writev() on Linux.
 func Writev(fd int, iov [][]byte) (int, error) {
@@ -33,4 +36,21 @@ func Readv(fd int, iov [][]byte) (int, error) {
 		return 0, nil
 	}
 	return unix.Readv(fd, iov)
+}
+
+// appendBytes converts bs to Iovecs and appends them to vecs.
+func AppendBytes(vecs []unix.Iovec, bs [][]byte) []unix.Iovec {
+	// Single-word zero for use when we need a valid pointer to 0 bytes.
+	var _zero uintptr
+	for _, b := range bs {
+		var v unix.Iovec
+		v.SetLen(len(b))
+		if len(b) > 0 {
+			v.Base = &b[0]
+		} else {
+			v.Base = (*byte)(unsafe.Pointer(&_zero))
+		}
+		vecs = append(vecs, v)
+	}
+	return vecs
 }

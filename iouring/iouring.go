@@ -193,6 +193,10 @@ func (i Iouring) PrepListen(sqe *SubmissionQueueEntry, fd int, backlog uint32) e
 	return PrepListen(sqe, fd, backlog)
 }
 
+func (i Iouring) PrepEpollCtl(sqe *SubmissionQueueEntry, epfd int, fd int, op int, ev *syscall.EpollEvent) error {
+	return PrepEpollCtl(sqe, epfd, fd, op, ev)
+}
+
 func (i Iouring) PrepSendmsgZc(sqe *SubmissionQueueEntry, fd int, msgh *syscall.Msghdr, flags int) error {
 	return PrepSendmsgZc(sqe, fd, msgh, flags)
 }

@@ -395,7 +395,7 @@ func (el *eventloop) rotate() error {
 		defer runtime.UnlockOSThread()
 	}
 
-	err := el.selector.Polling(el.accept0)
+	err := el.selector.Polling(el, el.accept0)
 	if errors.Is(err, errorx.ErrEngineShutdown) {
 		logger.Debugf("main reactor is exiting in terms of the demand from user, %v", err)
 		err = nil
@@ -414,7 +414,7 @@ func (el *eventloop) orbit() error {
 		defer runtime.UnlockOSThread()
 	}
 
-	err := el.selector.Polling(func(fd int) error {
+	err := el.selector.Polling(el, func(fd int) error {
 		c := el.connections.GetConnByFd(fd)
 		if c == nil {
 			// For kqueue, this might happen when the connection has already been closed,
@@ -447,21 +447,8 @@ func (el *eventloop) run() error {
 		defer runtime.UnlockOSThread()
 	}
 
-	err := el.selector.Polling(func(fd int) error {
-		c := el.connections.GetConnByFd(fd)
-		if c == nil {
-			if _, ok := el.listeners[fd]; ok {
-				return el.accept(fd)
-			}
-			// For kqueue, this might happen when the connection has already been closed,
-			// the file descriptor will be deleted from kqueue automatically as documented
-			// in the manual pages.
-			// For epoll, it somehow notified with an event for a stale fd that is not in
-			// our connection set. We need to explicitly delete it from the epoll set.
-			// Also print a warning log for this kind of irregularity.
-			logger.Warnf("received event[fd=%d] of a stale connection from event-loop(%d)", fd, el.idx)
-			return el.selector.Delete(fd)
-		}
+	err := el.selector.Polling(el, func(fd int) error {
+
 		return nil
 	})
 	if errors.Is(err, errorx.ErrEngineShutdown) {

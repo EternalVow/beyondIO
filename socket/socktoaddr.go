@@ -18,16 +18,27 @@
 package socket
 
 import (
+	"github.com/mohae/deepcopy"
 	"github.com/panjf2000/gnet/v2/pkg/errors"
+	bsPool "github.com/panjf2000/gnet/v2/pkg/pool/byteslice"
 	"golang.org/x/sys/unix"
 	"net"
 	"syscall"
-
-	bsPool "github.com/panjf2000/gnet/v2/pkg/pool/byteslice"
 )
 
 // SockaddrToTCPOrUnixAddr converts a Sockaddr to a net.TCPAddr or net.UnixAddr.
 // Returns nil if conversion fails.
+
+func TranSyscallSockaddrToUnixAddr(sa syscall.Sockaddr) unix.Sockaddr {
+	c := deepcopy.Copy(sa)
+	return c.(unix.Sockaddr)
+}
+
+func TranUnixSockaddrToSyscallAddr(addr unix.Sockaddr) syscall.Sockaddr {
+	c := deepcopy.Copy(addr)
+	return c.(syscall.Sockaddr)
+}
+
 func SockaddrToTCPOrUnixAddr(sa unix.Sockaddr) net.Addr {
 	switch sa := sa.(type) {
 	case *unix.SockaddrInet4:
@@ -35,6 +46,18 @@ func SockaddrToTCPOrUnixAddr(sa unix.Sockaddr) net.Addr {
 	case *unix.SockaddrInet6:
 		return &net.TCPAddr{IP: sa.Addr[0:], Port: sa.Port, Zone: ip6ZoneToString(sa.ZoneId)}
 	case *unix.SockaddrUnix:
+		return &net.UnixAddr{Name: sa.Name, Net: "unix"}
+	}
+	return nil
+}
+
+func SockaddrToTCPOrSysAddr(sa syscall.Sockaddr) net.Addr {
+	switch sa := sa.(type) {
+	case *syscall.SockaddrInet4:
+		return &net.TCPAddr{IP: sa.Addr[0:], Port: sa.Port}
+	case *syscall.SockaddrInet6:
+		return &net.TCPAddr{IP: sa.Addr[0:], Port: sa.Port, Zone: ip6ZoneToString(sa.ZoneId)}
+	case *syscall.SockaddrUnix:
 		return &net.UnixAddr{Name: sa.Name, Net: "unix"}
 	}
 	return nil

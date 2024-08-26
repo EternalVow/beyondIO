@@ -10,4 +10,6 @@ var (
 	DefaultBufferSize  = 1024 * 10         // 10 kb
 
 	MAX_EVENTS = 500
+
+	minIovec = 8
 )
