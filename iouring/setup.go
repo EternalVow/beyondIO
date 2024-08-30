@@ -3,16 +3,18 @@ package iouring
 import (
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
-func getSqCqEntries(entries uint, p *Params) (ret uint, sq uint, cq uint) {
+func getSqCqEntries(entries uint, p *Params) (err error, sq uint, cq uint) {
 
 	if entries > 0 {
-		return _EINVAL, 0, 0
+		return unix.EINVAL, 0, 0
 	}
 	if entries > KERN_MAX_ENTRIES {
 		if (p.Flags & SetupClamp) == 0 {
-			return _EINVAL, 0, 0
+			return unix.EINVAL, 0, 0
 		}
 		entries = KERN_MAX_ENTRIES
 	}
@@ -20,39 +22,39 @@ func getSqCqEntries(entries uint, p *Params) (ret uint, sq uint, cq uint) {
 	entries = roundupPow2(entries)
 	if (p.Flags & SetupCQSize) > 0 {
 		if p.cqEntries == 0 {
-			return _EINVAL, 0, 0
+			return unix.EINVAL, 0, 0
 		}
 		cq = uint(p.cqEntries)
 		if cq > KERN_MAX_CQ_ENTRIES {
 			if (p.Flags & SetupClamp) == 0 {
-				return _EINVAL, 0, 0
+				return unix.EINVAL, 0, 0
 			}
 			cq = KERN_MAX_CQ_ENTRIES
 		}
 		cq = roundupPow2(cq)
 		if uint(cq) < entries {
-			return _EINVAL, 0, 0
+			return unix.EINVAL, 0, 0
 		}
 	} else {
 		cq = 2 * entries
 	}
 
 	sq = entries
-	return 0, sq, cq
+	return nil, sq, cq
 }
 
 func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue,
-	buf unsafe.Pointer, buf_size uint) uint {
+	buf unsafe.Pointer, buf_size uint) (uint, error) {
 	var page_size uint = getPageSize()
 	//var sq_entries, cq_entries uint32
 	var ring_mem, sqes_mem, cqes_mem uint
 	var mem_used uint
 	var ptr unsafe.Pointer
-	var ret uint
+	var ret error
 
 	ret, sq_entries, cq_entries := getSqCqEntries(entries, p)
-	if ret > 0 {
-		return ret
+	if ret != nil {
+		return 0, ret
 	}
 
 	ring_mem = KRING_SIZE
@@ -79,12 +81,12 @@ func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue
 	 * sizes). Bail out early so we don't overrun.
 	 */
 	if buf == nil && (sqes_mem > hugePageSize || ring_mem > hugePageSize) {
-		return _EINVAL
+		return 0, unix.EINVAL
 	}
 
 	if buf != nil {
 		if mem_used > buf_size {
-			return _EINVAL
+			return 0, unix.EINVAL
 		}
 
 		ptr = buf
@@ -102,7 +104,7 @@ func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue
 			syscall.PROT_READ|syscall.PROT_WRITE,
 			syscall.MAP_SHARED|syscall.MAP_ANONYMOUS|map_hugetlb, -1, 0)
 		if err != nil {
-			return _EINVAL
+			return 0, unix.EINVAL
 		}
 
 	}
@@ -129,7 +131,7 @@ func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue
 		if err != nil {
 			_ = sysMunmap(uintptr(unsafe.Pointer(sq.sqes)), 1)
 
-			return _EINVAL
+			return 0, unix.EINVAL
 		}
 		sq.ringPtr = ptr
 		sq.ringSize = uint(buf_size)
@@ -139,7 +141,7 @@ func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue
 	cq.ringPtr = sq.ringPtr
 	p.sqOff.userAddr = uint64(uintptr(unsafe.Pointer(sq.sqes)))
 	p.cqOff.userAddr = uint64(uintptr(sq.ringPtr))
-	return mem_used
+	return mem_used, nil
 
 }
 
@@ -245,11 +247,12 @@ func QueueMmap(fd int, p *Params, ioUring *Ring) error {
 
 func QueueInitParams(entries uint, ioUring *Ring,
 	p *Params, buf unsafe.Pointer,
-	buf_size uint) uint {
+	buf_size uint) (uint, error) {
 	var fd uint
 	var ret uint
 	//var sq_array *uint32;
 	var sq_entries, index uint32
+	var err error
 
 	ioUring = &Ring{}
 
@@ -258,41 +261,40 @@ func QueueInitParams(entries uint, ioUring *Ring,
 	 * to avoid handling it below.
 	 */
 	if (p.Flags&SetupRegisteredFdOnly) != 0 && (p.Flags&SetupNoMmap) != 0 {
-		return _EINVAL
+		return fd, unix.EINVAL
 	}
 
 	if (p.Flags & SetupNoMmap) != 0 {
-		ret = AllocHuge(entries, p, ioUring.sqRing, ioUring.cqRing,
+		ret, err = AllocHuge(entries, p, ioUring.sqRing, ioUring.cqRing,
 			buf, buf_size)
-		if ret < 0 {
-			return ret
+		if err != nil {
+			return 0, err
 		}
 		if buf != nil {
 			ioUring.intFlags = (ioUring.intFlags | InitFlagRegAppMem)
 		}
 	}
 
-	var err error
 	fd, err = SyscallIoUringSetup(uint32(entries), p)
 	if err != nil {
-		return _EINVAL
+		return fd, unix.EINVAL
 	}
 	if fd < 0 {
 		if (p.Flags&SetupNoMmap) != 0 && (ioUring.intFlags&InitFlagRegAppMem) == 0 {
 			_ = sysMunmap(uintptr(unsafe.Pointer(ioUring.sqRing.sqes)), 1)
 			UnmapRings(ioUring.sqRing, ioUring.cqRing)
 		}
-		return fd
+		return fd, unix.EINVAL
 	}
 
 	if (p.Flags & SetupNoMmap) == 0 {
 		err = QueueMmap(int(fd), p, ioUring)
 		if err != nil {
-			return _EINVAL
+			return 0, unix.EINVAL
 		}
 		if ret != 0 {
 			syscall.Close(int(fd))
-			return ret
+			return ret, unix.EINVAL
 		}
 	} else {
 		SetupRingPointers(p, ioUring.sqRing, ioUring.cqRing)
@@ -320,7 +322,7 @@ func QueueInitParams(entries uint, ioUring *Ring,
 			ioUring.ringFd = int(fd)
 		}
 
-		return 0
+		return 0, nil
 	}
-	return 0
+	return 0, nil
 }

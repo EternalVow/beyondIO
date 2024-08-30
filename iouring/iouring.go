@@ -254,8 +254,8 @@ func (i Iouring) DoUnregisterEventfd(ioUring *Ring, event_fd int) (uint, error) 
 }
 
 func (i Iouring) QueueInitParams(entries uint, ioUring *Ring, p *Params) error {
-	ret := QueueInitParams(entries, ioUring, p, nil, 0)
-	if ret != 0 {
+	ret, err := QueueInitParams(entries, ioUring, p, nil, 0)
+	if ret != 0 || err != nil {
 		return errors.New("Failed to initialize Iouring queue")
 	}
 	return nil
@@ -265,17 +265,17 @@ func (i Iouring) QueueInitTryNosqarr(entries uint, ioUring *Ring, p *Params, buf
 	var flags = p.Flags
 
 	p.Flags |= SetupNoSQArray
-	ret := QueueInitParams(entries, ioUring, p, buf, bufSize)
+	ret, err := QueueInitParams(entries, ioUring, p, buf, bufSize)
 
 	/* don't fallback if explicitly asked for NOSQARRAY */
-	if ret != _EINVAL || (flags&SetupNoSQArray) == 0 {
+	if err != unix.EINVAL || (flags&SetupNoSQArray) == 0 {
 		//return ret, nil
 		return errors.New("QueueInitParams Failed to initialize Iouring queue")
 	}
 
 	p.Flags = flags
-	ret = QueueInitParams(entries, ioUring, p, buf, bufSize)
-	if ret != 0 {
+	ret, err = QueueInitParams(entries, ioUring, p, buf, bufSize)
+	if ret != 0 || err != nil {
 		return errors.New("Failed to initialize Iouring queue")
 	}
 	return nil

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 func doRegister(ioUring *Ring, opcode uint, arg unsafe.Pointer, nr_args uint) (uint, error) {
@@ -26,7 +28,7 @@ func DoRegisterRingFd(ioUring *Ring) (uint, error) {
 		offset: uint32(INTMax32),
 	}
 	if ioUring.intFlags&IntFlagRegRing > 0 {
-		return 0, errors.New("-EEXIST")
+		return 0, unix.EEXIST
 	}
 	ret, err := doRegister(ioUring, uint(RegisterRingFDs), unsafe.Pointer(&up), 1)
 	if err != nil {
