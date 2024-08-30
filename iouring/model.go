@@ -177,13 +177,13 @@ type CompletionQueue struct {
 type Ring struct {
 	sqRing      *SubmissionQueue
 	cqRing      *CompletionQueue
-	flags       uint32
 	ringFd      int
-	features    uint32
 	enterRingFd int
+	flags       uint32
+	features    uint32
 	intFlags    uint32
-	pad         [3]uint8
 	pad2        uint32
+	pad         [3]uint8
 }
 
 type GetData struct {
