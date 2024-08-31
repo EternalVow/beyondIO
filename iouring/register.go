@@ -82,7 +82,7 @@ func DoRegisterFiles(ioUring *Ring, files *int, nr_files uint) (uint, error) {
 			return 0, err
 		}
 		if ret >= 0 {
-			return ret, errors.New("doRegister err")
+			return ret, nil
 		}
 		if did_increase == 0 {
 			did_increase = 1
