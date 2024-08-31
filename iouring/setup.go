@@ -291,7 +291,7 @@ func QueueInitParams(entries uint, ioUring *Ring,
 	if (p.Flags & SetupNoMmap) == 0 {
 		err = QueueMmap(int(fd), p, ioUring)
 		if err != nil {
-			return 0, unix.EINVAL
+			return 0, err
 		}
 		if ret != 0 {
 			syscall.Close(int(fd))
