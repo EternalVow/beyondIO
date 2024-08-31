@@ -1,6 +1,7 @@
 package iouring
 
 import (
+	"github.com/pkg/errors"
 	"syscall"
 	"unsafe"
 
@@ -81,12 +82,12 @@ func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue
 	 * sizes). Bail out early so we don't overrun.
 	 */
 	if buf == nil && (sqes_mem > hugePageSize || ring_mem > hugePageSize) {
-		return 0, unix.EINVAL
+		return 0, unix.ENOMEM
 	}
 
 	if buf != nil {
 		if mem_used > buf_size {
-			return 0, unix.EINVAL
+			return 0, unix.ENOMEM
 		}
 
 		ptr = buf
@@ -104,7 +105,7 @@ func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue
 			syscall.PROT_READ|syscall.PROT_WRITE,
 			syscall.MAP_SHARED|syscall.MAP_ANONYMOUS|map_hugetlb, -1, 0)
 		if err != nil {
-			return 0, unix.EINVAL
+			return 0, errors.WithStack(err)
 		}
 
 	}
@@ -131,7 +132,7 @@ func AllocHuge(entries uint, p *Params, sq *SubmissionQueue, cq *CompletionQueue
 		if err != nil {
 			_ = sysMunmap(uintptr(unsafe.Pointer(sq.sqes)), 1)
 
-			return 0, unix.EINVAL
+			return 0, errors.WithStack(err)
 		}
 		sq.ringPtr = ptr
 		sq.ringSize = uint(buf_size)
