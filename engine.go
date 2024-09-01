@@ -266,7 +266,7 @@ func run(eventHandler EventHandler, listeners []*listener, options *Options, add
 		engine:  &eng,
 	}
 
-	eng.ring.QueueInit(8, ring.Ring, 0)
+	eng.ring.QueueInit(8, eng.ring.Ring, 0)
 
 	if eng.opts.Ticker {
 		eng.ticker.ctx, eng.ticker.cancel = context.WithCancel(context.Background())

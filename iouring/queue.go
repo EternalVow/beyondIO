@@ -772,7 +772,6 @@ func GetSqe(ioUring *Ring) *SubmissionQueueEntry {
 		head = uint32(*sq.head)
 	} else {
 		head = uint32(atomic.LoadUint32(sq.head))
-
 	}
 
 	if next-head <= *sq.ringEntries {
